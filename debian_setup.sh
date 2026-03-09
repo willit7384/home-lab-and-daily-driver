@@ -95,13 +95,21 @@ if [[ "$(basename "$SHELL")" != "zsh" ]]; then
 fi
 
 # NVChad
-git clone https://github.com/NvChad/NvChad ~/.config/nvim --depth 1
+if [[ ! -d "$HOME/.config/nvim" ]]; then
+    git clone https://github.com/NvChad/NvChad ~/.config/nvim --depth 1
+fi
 
 log_success "Terminal + NVChad ready"
 
 # ----------------------------- 3. CLI TOOLS -----------------------------
 log_info "3. Installing CLI tools..."
-sudo apt install -y tldr autojump trash-cli cmatrix bat ripgrep fd-find htop btop rsync rclone
+sudo apt install -y autojump trash-cli cmatrix ripgrep fd-find htop btop rsync rclone
+
+# Install tldr via npm because Debian stable doesn't have apt package
+if ! command -v tldr &> /dev/null; then
+    sudo apt install -y npm
+    npm install -g tldr
+fi
 
 log_success "CLI tools installed"
 
@@ -110,10 +118,12 @@ log_info "4. Installing Snapper + Timeshift..."
 sudo apt install -y btrfs-progs snapper timeshift
 
 # Snapper config for root
-sudo snapper -c root create-config /
-sudo snapper -c root set-config TIMELINE_CREATE=yes
-sudo snapper -c root set-config NUMBER_LIMIT=50
-sudo snapper -c root set-config NUMBER_LIMIT_IMPORTANT=10
+if ! sudo snapper -c root list-configs &> /dev/null; then
+    sudo snapper -c root create-config /
+    sudo snapper -c root set-config TIMELINE_CREATE=yes
+    sudo snapper -c root set-config NUMBER_LIMIT=50
+    sudo snapper -c root set-config NUMBER_LIMIT_IMPORTANT=10
+fi
 
 log_success "Snapshots configured"
 
