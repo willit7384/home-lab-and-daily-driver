@@ -3,7 +3,7 @@
 # debian_setup.sh
 # =============================================================================
 # Fully automated, idempotent setup for Debian Stable homelab server
-# Features: Docker homelab, Tailscale, Snapper/Timeshift, Fail2Ban
+# Features: Docker homelab, Tailscale, Snapper/Timeshift, Fail2Ban, gaming optional
 # Optimized for: 24/7 server, private cloud, AI services, monitoring
 #
 # Requirements:
@@ -12,7 +12,7 @@
 # - Internet connection
 #
 # Author: Senior Linux Engineer
-# Version: 1.2 (March 2026)
+# Version: 1.2 (March 2026) — npm EACCES fixed
 # =============================================================================
 
 set -euo pipefail
@@ -44,7 +44,8 @@ sleep 1
 # ----------------------------- 1. SYSTEM PREP -----------------------------
 log_info "1. Updating system and installing base tools..."
 sudo apt update && sudo apt full-upgrade -y
-sudo apt install -y curl wget gnupg2 ca-certificates build-essential git aptitude
+sudo apt install -y curl wget gnupg2 ca-certificates \
+    build-essential git aptitude
 
 # Unattended security updates
 sudo apt install -y unattended-upgrades
@@ -56,14 +57,13 @@ log_success "Base system prepared"
 log_info "2. Installing zsh + Oh My Zsh + NVChad..."
 sudo apt install -y zsh vim neovim terminator
 
-# Oh My Zsh install
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
 fi
 
 # Zsh config
 cat > "$HOME/.zshrc" << 'EOF'
-export PATH="$HOME/.local/bin:$PATH"
+export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
 ZSH=/usr/share/oh-my-zsh
 ZSH_THEME="robbyrussell"
 plugins=(git zsh-autosuggestions zsh-syntax-highlighting autojump)
@@ -103,11 +103,16 @@ log_success "Terminal + NVChad ready"
 
 # ----------------------------- 3. CLI TOOLS -----------------------------
 log_info "3. Installing CLI tools..."
-sudo apt install -y autojump trash-cli cmatrix ripgrep fd-find htop btop rsync rclone
+sudo apt install -y autojump trash-cli cmatrix ripgrep fd-find htop btop rsync rclone npm
 
-# Install tldr via npm
+# ----------------------------- 3a. Fix npm global dir to avoid EACCES -----------------------------
+mkdir -p "$HOME/.npm-global"
+npm config set prefix "$HOME/.npm-global"
+export PATH="$HOME/.npm-global/bin:$PATH"
+echo 'export PATH="$HOME/.npm-global/bin:$PATH"' >> "$HOME/.profile"
+
+# Install tldr using user-local npm
 if ! command -v tldr &> /dev/null; then
-    sudo apt install -y npm
     npm install -g tldr
 fi
 
@@ -131,7 +136,7 @@ log_success "Snapshots configured"
 log_info "5. Installing security packages..."
 sudo apt install -y ufw fail2ban
 
-# UFW setup
+# UFW
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow from 100.64.0.0/10 to any port 22 comment 'Tailscale SSH'
@@ -157,11 +162,11 @@ log_success "Tailscale installed"
 
 # ----------------------------- 7. DOCKER -----------------------------
 log_info "7. Installing Docker + Compose..."
-sudo install -d -m 0755 /etc/apt/keyrings
+sudo install -m 0755 -d /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-sudo tee /etc/apt/sources.list.d/docker.sources <<EOF >/dev/null
+sudo tee /etc/apt/sources.list.d/docker.sources > /dev/null <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/debian
 Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
@@ -178,17 +183,16 @@ log_success "Docker ready"
 
 # ----------------------------- 8. HOMELAB FOLDER STRUCTURE -----------------------------
 log_info "8. Creating /srv/docker homelab structure..."
-sudo mkdir -p /srv/docker
-for service in nextcloud jellyfin openwebui ollama qdrant uptime-kuma netdata adguardhome prometheus-grafana gitea code-server postgres mysql; do
-    sudo mkdir -p "/srv/docker/$service/data" "/srv/docker/$service/config"
+sudo mkdir -p /srv/docker/{nextcloud,jellyfin,openwebui,ollama,qdrant,uptime-kuma,netdata,adguardhome,prometheus-grafana,gitea,code-server,postgres,mysql}
+for dir in /srv/docker/*; do
+    sudo mkdir -p "$dir"/{data,config}
 done
 sudo chown -R "$USER:$USER" /srv/docker
-
 log_success "/srv/docker structure ready"
 
 # ----------------------------- 9. MAINTENANCE SCRIPT -----------------------------
 log_info "9. Creating homelab maintenance script..."
-sudo tee /usr/local/bin/homelab-maintenance.sh << 'EOF' >/dev/null
+cat > /usr/local/bin/homelab-maintenance.sh << 'EOF'
 #!/usr/bin/env bash
 echo "=== Updating Debian packages ==="
 apt update && apt full-upgrade -y && apt autoremove -y
@@ -201,12 +205,13 @@ echo "=== Creating Timeshift snapshot ==="
 timeshift --create --comments "weekly auto" --tags W
 echo "=== Maintenance complete ==="
 EOF
+
 sudo chmod +x /usr/local/bin/homelab-maintenance.sh
 log_success "Maintenance script ready"
 
 # ----------------------------- 10. FINAL VERIFICATION -----------------------------
 log_info "10. Verifying..."
-commands=(zsh batcat rg fd docker tailscale ufw fail2ban)
+commands=(zsh batcat rg fd docker tailscale ufw fail2ban tldr)
 for cmd in "${commands[@]}"; do
     if command -v "$cmd" &> /dev/null || docker ps | grep -q "$cmd"; then
         log_success "$cmd ready"
