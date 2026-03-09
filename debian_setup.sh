@@ -44,12 +44,11 @@ sleep 1
 # ----------------------------- 1. SYSTEM PREP -----------------------------
 log_info "1. Updating system and installing base tools..."
 sudo apt update && sudo apt full-upgrade -y
-sudo apt install -y curl wget gnupg2 ca-certificates build-essential git aptitude npm
+sudo apt install -y curl wget gnupg2 ca-certificates build-essential git aptitude
 
 # Unattended security updates
 sudo apt install -y unattended-upgrades
 sudo dpkg-reconfigure --priority=low unattended-upgrades
-
 log_success "Base system prepared"
 
 # ----------------------------- 2. TERMINAL ENV -----------------------------
@@ -97,18 +96,17 @@ fi
 if [[ ! -d "$HOME/.config/nvim" ]]; then
     git clone https://github.com/NvChad/NvChad ~/.config/nvim --depth 1
 fi
-
 log_success "Terminal + NVChad ready"
 
 # ----------------------------- 3. CLI TOOLS -----------------------------
 log_info "3. Installing CLI tools..."
 sudo apt install -y autojump trash-cli cmatrix ripgrep fd-find htop btop rsync rclone
 
-# Install tldr via npm
+# Install tldr via npm (Debian stable has no apt package)
 if ! command -v tldr &> /dev/null; then
+    sudo apt install -y npm
     npm install -g tldr
 fi
-
 log_success "CLI tools installed"
 
 # ----------------------------- 4. SNAPSHOT / BACKUP -----------------------------
@@ -122,7 +120,6 @@ if ! sudo snapper -c root list-configs &> /dev/null; then
     sudo snapper -c root set-config NUMBER_LIMIT=50
     sudo snapper -c root set-config NUMBER_LIMIT_IMPORTANT=10
 fi
-
 log_success "Snapshots configured"
 
 # ----------------------------- 5. SECURITY -----------------------------
@@ -143,14 +140,12 @@ sudo sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 sudo sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
 sudo sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 sudo systemctl restart ssh
-
 log_success "Security ready"
 
 # ----------------------------- 6. TAILSCALE -----------------------------
 log_info "6. Installing Tailscale VPN..."
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo systemctl enable --now tailscaled
-
 log_success "Tailscale installed"
 
 # ----------------------------- 7. DOCKER -----------------------------
@@ -171,37 +166,33 @@ sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo usermod -aG docker "$USER"
 sudo systemctl enable --now docker
-
 log_success "Docker ready"
 
 # ----------------------------- 8. HOMELAB FOLDER STRUCTURE -----------------------------
 log_info "8. Creating /srv/docker homelab structure..."
-sudo mkdir -p /srv/docker
 services=(nextcloud jellyfin openwebui ollama qdrant uptime-kuma netdata adguardhome prometheus-grafana gitea code-server postgres mysql)
 
 for service in "${services[@]}"; do
     sudo mkdir -p "/srv/docker/$service/data" "/srv/docker/$service/config"
 done
-
 sudo chown -R "$USER:$USER" /srv/docker
 log_success "/srv/docker structure ready"
 
 # ----------------------------- 9. MAINTENANCE SCRIPT -----------------------------
 log_info "9. Creating homelab maintenance script..."
-cat > /usr/local/bin/homelab-maintenance.sh << 'EOF'
+sudo tee /usr/local/bin/homelab-maintenance.sh > /dev/null << 'EOF'
 #!/usr/bin/env bash
 echo "=== Updating Debian packages ==="
-apt update && apt full-upgrade -y && apt autoremove -y
+sudo apt update && sudo apt full-upgrade -y && sudo apt autoremove -y
 echo "=== Updating Docker containers ==="
 for f in /srv/docker/*/docker-compose.yml; do
-  docker compose -f "$f" pull || true
-  docker compose -f "$f" up -d || true
+  sudo docker compose -f "$f" pull || true
+  sudo docker compose -f "$f" up -d || true
 done
 echo "=== Creating Timeshift snapshot ==="
-timeshift --create --comments "weekly auto" --tags W
+sudo timeshift --create --comments "weekly auto" --tags W
 echo "=== Maintenance complete ==="
 EOF
-
 sudo chmod +x /usr/local/bin/homelab-maintenance.sh
 log_success "Maintenance script ready"
 
