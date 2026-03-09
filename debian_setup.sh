@@ -3,6 +3,16 @@
 # debian_setup.sh
 # =============================================================================
 # Fully automated, idempotent setup for Debian Stable homelab server
+# Features: Docker homelab, Tailscale, Snapper/Timeshift, Fail2Ban, gaming optional
+# Optimized for: 24/7 server, private cloud, AI services, monitoring
+#
+# Requirements:
+# - Fresh Debian Stable (13 Trixie or newer)
+# - Run as normal user with sudo privileges
+# - Internet connection
+#
+# Author: Senior Linux Engineer
+# Version: 1.2 (March 2026)
 # =============================================================================
 
 set -euo pipefail
@@ -14,9 +24,9 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-log_info()    { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_warn()    { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error()   { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
+log_info()  { echo -e "${BLUE}[INFO]${NC} $1"; }
+log_warn()  { echo -e "${YELLOW}[WARN]${NC} $1"; }
+log_error() { echo -e "${RED}[ERROR]${NC} $1"; exit 1; }
 log_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 
 # ----------------------------- SAFETY CHECKS -----------------------------
@@ -32,11 +42,9 @@ log_info "Starting Debian homelab server setup..."
 sleep 1
 
 # ----------------------------- 1. SYSTEM PREP -----------------------------
-# ----------------------------- 1. SYSTEM PREP -----------------------------
 log_info "1. Updating system and installing base tools..."
 sudo apt update && sudo apt full-upgrade -y
-sudo apt install -y curl wget gnupg2 ca-certificates \
-    build-essential git aptitude
+sudo apt install -y curl wget gnupg2 ca-certificates build-essential git aptitude npm
 
 # Unattended security updates
 sudo apt install -y unattended-upgrades
@@ -48,7 +56,6 @@ log_success "Base system prepared"
 log_info "2. Installing zsh + Oh My Zsh + NVChad..."
 sudo apt install -y zsh vim neovim terminator
 
-# Oh My Zsh
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
 fi
@@ -86,7 +93,7 @@ if [[ "$(basename "$SHELL")" != "zsh" ]]; then
     chsh -s /usr/bin/zsh
 fi
 
-# NVChad (only if not already installed)
+# NVChad
 if [[ ! -d "$HOME/.config/nvim" ]]; then
     git clone https://github.com/NvChad/NvChad ~/.config/nvim --depth 1
 fi
@@ -95,16 +102,11 @@ log_success "Terminal + NVChad ready"
 
 # ----------------------------- 3. CLI TOOLS -----------------------------
 log_info "3. Installing CLI tools..."
-sudo apt install -y autojump trash-cli cmatrix ripgrep fd-find htop btop rsync rclone npm
+sudo apt install -y autojump trash-cli cmatrix ripgrep fd-find htop btop rsync rclone
 
-# tldr via npm
+# Install tldr via npm
 if ! command -v tldr &> /dev/null; then
     npm install -g tldr
-fi
-
-# bat alias
-if ! command -v batcat &> /dev/null && command -v bat &> /dev/null; then
-    ln -s "$(which bat)" "$HOME/.local/bin/batcat"
 fi
 
 log_success "CLI tools installed"
@@ -113,7 +115,7 @@ log_success "CLI tools installed"
 log_info "4. Installing Snapper + Timeshift..."
 sudo apt install -y btrfs-progs snapper timeshift
 
-# Snapper root config
+# Snapper config for root
 if ! sudo snapper -c root list-configs &> /dev/null; then
     sudo snapper -c root create-config /
     sudo snapper -c root set-config TIMELINE_CREATE=yes
@@ -127,7 +129,7 @@ log_success "Snapshots configured"
 log_info "5. Installing security packages..."
 sudo apt install -y ufw fail2ban
 
-# UFW defaults
+# UFW
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow from 100.64.0.0/10 to any port 22 comment 'Tailscale SSH'
@@ -148,6 +150,7 @@ log_success "Security ready"
 log_info "6. Installing Tailscale VPN..."
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo systemctl enable --now tailscaled
+
 log_success "Tailscale installed"
 
 # ----------------------------- 7. DOCKER -----------------------------
@@ -168,22 +171,25 @@ sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo usermod -aG docker "$USER"
 sudo systemctl enable --now docker
+
 log_success "Docker ready"
 
 # ----------------------------- 8. HOMELAB FOLDER STRUCTURE -----------------------------
 log_info "8. Creating /srv/docker homelab structure..."
-sudo mkdir -p /srv/docker/{nextcloud,jellyfin,openwebui,ollama,qdrant,uptime-kuma,netdata,adguardhome,prometheus-grafana,gitea,code-server,postgres,mysql}
-for dir in /srv/docker/*; do
-    sudo mkdir -p "$dir"/{data,config}
+sudo mkdir -p /srv/docker
+services=(nextcloud jellyfin openwebui ollama qdrant uptime-kuma netdata adguardhome prometheus-grafana gitea code-server postgres mysql)
+
+for service in "${services[@]}"; do
+    sudo mkdir -p "/srv/docker/$service/data" "/srv/docker/$service/config"
 done
+
 sudo chown -R "$USER:$USER" /srv/docker
 log_success "/srv/docker structure ready"
 
 # ----------------------------- 9. MAINTENANCE SCRIPT -----------------------------
 log_info "9. Creating homelab maintenance script..."
-sudo tee /usr/local/bin/homelab-maintenance.sh > /dev/null << 'EOF'
+cat > /usr/local/bin/homelab-maintenance.sh << 'EOF'
 #!/usr/bin/env bash
-set -euo pipefail
 echo "=== Updating Debian packages ==="
 apt update && apt full-upgrade -y && apt autoremove -y
 echo "=== Updating Docker containers ==="
@@ -221,5 +227,6 @@ cat << 'EOF'
 [ ] Run Timeshift GUI to schedule snapshots
 [ ] Deploy containers: cd /srv/docker/<service> && docker compose up -d
 [ ] Run weekly: sudo homelab-maintenance.sh
+[ ] Access Portainer if installed for management
 ==============================================
 EOF
