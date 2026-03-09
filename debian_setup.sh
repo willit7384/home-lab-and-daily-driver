@@ -191,8 +191,9 @@ sudo chown -R "$USER:$USER" /srv/docker
 log_success "/srv/docker structure ready"
 
 # ----------------------------- 9. MAINTENANCE SCRIPT -----------------------------
+# ----------------------------- 9. MAINTENANCE SCRIPT -----------------------------
 log_info "9. Creating homelab maintenance script..."
-cat > /usr/local/bin/homelab-maintenance.sh << 'EOF'
+sudo tee /usr/local/bin/homelab-maintenance.sh > /dev/null << 'EOF'
 #!/usr/bin/env bash
 echo "=== Updating Debian packages ==="
 apt update && apt full-upgrade -y && apt autoremove -y
@@ -208,7 +209,6 @@ EOF
 
 sudo chmod +x /usr/local/bin/homelab-maintenance.sh
 log_success "Maintenance script ready"
-
 # ----------------------------- 10. FINAL VERIFICATION -----------------------------
 log_info "10. Verifying..."
 commands=(zsh batcat rg fd docker tailscale ufw fail2ban tldr)
