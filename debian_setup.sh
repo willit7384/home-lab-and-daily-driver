@@ -44,8 +44,8 @@ sleep 1
 # ----------------------------- 1. SYSTEM PREP -----------------------------
 log_info "1. Updating system and installing base tools..."
 sudo apt update && sudo apt full-upgrade -y
-sudo apt install -y curl wget gnupg2 ca-certificates apt-transport-https \
-    software-properties-common build-essential git aptitude
+sudo apt install -y curl wget gnupg2 ca-certificates \
+    build-essential git aptitude
 
 # Unattended security updates
 sudo apt install -y unattended-upgrades
