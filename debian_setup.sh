@@ -3,7 +3,7 @@
 # debian_setup.sh
 # =============================================================================
 # Fully automated, idempotent setup for Debian Stable homelab server
-# Features: Docker homelab, Tailscale, Snapper/Timeshift, Fail2Ban, gaming optional
+# Features: Docker homelab, Tailscale, Snapper/Timeshift, Fail2Ban
 # Optimized for: 24/7 server, private cloud, AI services, monitoring
 #
 # Requirements:
@@ -49,12 +49,14 @@ sudo apt install -y curl wget gnupg2 ca-certificates build-essential git aptitud
 # Unattended security updates
 sudo apt install -y unattended-upgrades
 sudo dpkg-reconfigure --priority=low unattended-upgrades
+
 log_success "Base system prepared"
 
 # ----------------------------- 2. TERMINAL ENV -----------------------------
 log_info "2. Installing zsh + Oh My Zsh + NVChad..."
 sudo apt install -y zsh vim neovim terminator
 
+# Oh My Zsh install
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
     sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended
 fi
@@ -96,17 +98,19 @@ fi
 if [[ ! -d "$HOME/.config/nvim" ]]; then
     git clone https://github.com/NvChad/NvChad ~/.config/nvim --depth 1
 fi
+
 log_success "Terminal + NVChad ready"
 
 # ----------------------------- 3. CLI TOOLS -----------------------------
 log_info "3. Installing CLI tools..."
 sudo apt install -y autojump trash-cli cmatrix ripgrep fd-find htop btop rsync rclone
 
-# Install tldr via npm (Debian stable has no apt package)
+# Install tldr via npm
 if ! command -v tldr &> /dev/null; then
     sudo apt install -y npm
     npm install -g tldr
 fi
+
 log_success "CLI tools installed"
 
 # ----------------------------- 4. SNAPSHOT / BACKUP -----------------------------
@@ -120,13 +124,14 @@ if ! sudo snapper -c root list-configs &> /dev/null; then
     sudo snapper -c root set-config NUMBER_LIMIT=50
     sudo snapper -c root set-config NUMBER_LIMIT_IMPORTANT=10
 fi
+
 log_success "Snapshots configured"
 
 # ----------------------------- 5. SECURITY -----------------------------
 log_info "5. Installing security packages..."
 sudo apt install -y ufw fail2ban
 
-# UFW
+# UFW setup
 sudo ufw default deny incoming
 sudo ufw default allow outgoing
 sudo ufw allow from 100.64.0.0/10 to any port 22 comment 'Tailscale SSH'
@@ -140,21 +145,23 @@ sudo sed -i 's/#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
 sudo sed -i 's/#PubkeyAuthentication.*/PubkeyAuthentication yes/' /etc/ssh/sshd_config
 sudo sed -i 's/#PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
 sudo systemctl restart ssh
+
 log_success "Security ready"
 
 # ----------------------------- 6. TAILSCALE -----------------------------
 log_info "6. Installing Tailscale VPN..."
 curl -fsSL https://tailscale.com/install.sh | sh
 sudo systemctl enable --now tailscaled
+
 log_success "Tailscale installed"
 
 # ----------------------------- 7. DOCKER -----------------------------
 log_info "7. Installing Docker + Compose..."
-sudo install -m 0755 -d /etc/apt/keyrings
+sudo install -d -m 0755 /etc/apt/keyrings
 sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
 sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-sudo tee /etc/apt/sources.list.d/docker.sources > /dev/null <<EOF
+sudo tee /etc/apt/sources.list.d/docker.sources <<EOF >/dev/null
 Types: deb
 URIs: https://download.docker.com/linux/debian
 Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
@@ -166,31 +173,32 @@ sudo apt update
 sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 sudo usermod -aG docker "$USER"
 sudo systemctl enable --now docker
+
 log_success "Docker ready"
 
 # ----------------------------- 8. HOMELAB FOLDER STRUCTURE -----------------------------
 log_info "8. Creating /srv/docker homelab structure..."
-services=(nextcloud jellyfin openwebui ollama qdrant uptime-kuma netdata adguardhome prometheus-grafana gitea code-server postgres mysql)
-
-for service in "${services[@]}"; do
+sudo mkdir -p /srv/docker
+for service in nextcloud jellyfin openwebui ollama qdrant uptime-kuma netdata adguardhome prometheus-grafana gitea code-server postgres mysql; do
     sudo mkdir -p "/srv/docker/$service/data" "/srv/docker/$service/config"
 done
 sudo chown -R "$USER:$USER" /srv/docker
+
 log_success "/srv/docker structure ready"
 
 # ----------------------------- 9. MAINTENANCE SCRIPT -----------------------------
 log_info "9. Creating homelab maintenance script..."
-sudo tee /usr/local/bin/homelab-maintenance.sh > /dev/null << 'EOF'
+sudo tee /usr/local/bin/homelab-maintenance.sh << 'EOF' >/dev/null
 #!/usr/bin/env bash
 echo "=== Updating Debian packages ==="
-sudo apt update && sudo apt full-upgrade -y && sudo apt autoremove -y
+apt update && apt full-upgrade -y && apt autoremove -y
 echo "=== Updating Docker containers ==="
 for f in /srv/docker/*/docker-compose.yml; do
-  sudo docker compose -f "$f" pull || true
-  sudo docker compose -f "$f" up -d || true
+  docker compose -f "$f" pull || true
+  docker compose -f "$f" up -d || true
 done
 echo "=== Creating Timeshift snapshot ==="
-sudo timeshift --create --comments "weekly auto" --tags W
+timeshift --create --comments "weekly auto" --tags W
 echo "=== Maintenance complete ==="
 EOF
 sudo chmod +x /usr/local/bin/homelab-maintenance.sh
